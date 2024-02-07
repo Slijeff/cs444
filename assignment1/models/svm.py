@@ -19,7 +19,7 @@ class SVM:
         self.reg_const = reg_const
         self.n_class = n_class
 
-        self.batch_size = 16
+        self.batch_size = 128
 
     def calc_gradient(self, X_train: np.ndarray, y_train: np.ndarray) -> np.ndarray:
         """Calculate gradient of the svm hinge loss.
@@ -40,14 +40,14 @@ class SVM:
         gradient = np.zeros_like(self.w)  # n_class X n_features
         n_samples, n_features = X_train.shape
         for ith_sample in range(n_samples):
+            score = np.dot(self.w, X_train[ith_sample])
             for ith_class in range(self.n_class):
-                if ith_class != y_train[ith_sample] and \
-                        np.dot(self.w[y_train[ith_sample]], X_train[ith_sample]) - np.dot(self.w[ith_class], X_train[ith_sample]) < 1:
+                if ith_class != y_train[ith_sample] and score[y_train[ith_sample]] - score[ith_class] < 1:
                     gradient[ith_class] += X_train[ith_sample]
                     gradient[y_train[ith_sample]] -= X_train[ith_sample]
         return gradient / n_samples
 
-    def train(self, X_train: np.ndarray, y_train: np.ndarray):
+    def train(self, X_train_raw: np.ndarray, y_train: np.ndarray):
         """Train the classifier.
 
         Hint: operate on mini-batches of data for SGD.
@@ -57,13 +57,14 @@ class SVM:
                 N examples with D dimensions
             y_train: a numpy array of shape (N,) containing training labels
         """
+        X_train = (X_train_raw - np.mean(X_train_raw)) / np.std(X_train_raw)
         def get_acc(pred, y_test): return np.sum(
             y_test == pred) / len(y_test)
         n_samples, n_features = X_train.shape
         self.w = np.random.randn(self.n_class, n_features)
         for i in range(self.epochs):
             print(
-                f"epoch {i + 1} / {self.epochs}, error: {1 - get_acc(self.predict(X_train), y_train)}")
+                f"epoch {i + 1} / {self.epochs}, error: {1 - get_acc(self.predict(X_train), y_train)}, lr: {self.lr}")
             start, end = 0, self.batch_size
             for _ in range(n_samples // self.batch_size):
                 batch_x, batch_y = X_train[start:end], y_train[start:end]
@@ -73,7 +74,7 @@ class SVM:
             if i <= 15:
                 self.lr *= 0.98
 
-    def predict(self, X_test: np.ndarray) -> np.ndarray:
+    def predict(self, X_test_raw: np.ndarray) -> np.ndarray:
         """Use the trained weights to predict labels for test data points.
 
         Parameters:
@@ -86,4 +87,5 @@ class SVM:
                 class.
         """
         # TODO: implement me
+        X_test = (X_test_raw - np.mean(X_test_raw)) / np.std(X_test_raw)
         return np.argmax(np.dot(self.w, X_test.T).T, axis=1)
