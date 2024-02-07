@@ -45,7 +45,8 @@ class SVM:
                 if ith_class != y_train[ith_sample] and score[y_train[ith_sample]] - score[ith_class] < 1:
                     gradient[ith_class] += X_train[ith_sample]
                     gradient[y_train[ith_sample]] -= X_train[ith_sample]
-        return gradient / n_samples
+        # return gradient / n_samples
+        return gradient
 
     def train(self, X_train_raw: np.ndarray, y_train: np.ndarray):
         """Train the classifier.
@@ -66,11 +67,12 @@ class SVM:
             print(
                 f"epoch {i + 1} / {self.epochs}, error: {1 - get_acc(self.predict(X_train), y_train)}, lr: {self.lr}")
             start, end = 0, self.batch_size
-            for _ in range(n_samples // self.batch_size):
+            for batch in range(n_samples // self.batch_size):
+                start, end = self.batch_size * \
+                    batch, self.batch_size * (batch + 1)
                 batch_x, batch_y = X_train[start:end], y_train[start:end]
                 self.w = (1 - self.lr * self.reg_const / (n_samples // self.batch_size)
                           ) * self.w - self.lr * self.calc_gradient(batch_x, batch_y)
-                start, end = start + self.batch_size, end + self.batch_size
             if i <= 15:
                 self.lr *= 0.98
 
