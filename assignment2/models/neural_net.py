@@ -213,7 +213,12 @@ class NeuralNetwork:
         """
         # TODO: implement me. You'll want to add an if-statement that can
         # handle updates for both SGD and Adam depending on the value of opt.
-        return
+        if opt == 'Adam':
+            pass
+        else:
+            for layer in range(1, self.num_layers + 1):
+                self.params[f'W{layer}'] -= lr * self.gradients[f'W{layer}']
+                self.params[f'b{layer}'] -= lr * self.gradients[f'b{layer}']
 
     def print_shapes(self) -> None:
         print("=====Parameter shapes: ======= ")
