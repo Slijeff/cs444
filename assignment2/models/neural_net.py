@@ -47,12 +47,18 @@ class NeuralNetwork:
         sizes = [input_size] + hidden_sizes + [output_size]
 
         self.params = {}
+        self.velocity = {}
+        self.momentum = {} 
         for i in range(1, num_layers + 1):
             self.params["W" + str(i)] = np.random.randn(sizes[i - 1],
                                                         sizes[i]) / np.sqrt(sizes[i - 1])
             self.params["b" + str(i)] = np.zeros(sizes[i])
 
             # TODO: You may set parameters for Adam optimizer here
+            self.velocity[f'{i}'] = np.zeros_like(self.params[f'W{i}'])
+            self.momentum[f'{i}'] = np.zeros_like(self.params[f'W{i}'])
+        self.t = 1
+
 
     def linear(self, W: np.ndarray, X: np.ndarray, b: np.ndarray) -> np.ndarray:
         """Fully connected (linear) layer.
@@ -214,7 +220,19 @@ class NeuralNetwork:
         # TODO: implement me. You'll want to add an if-statement that can
         # handle updates for both SGD and Adam depending on the value of opt.
         if opt == 'Adam':
-            pass
+            for layer in range(1, self.num_layers + 1):
+                self.momentum[f'{layer}'] = (1 - b1) * self.gradients[f'W{layer}']  + \
+                    b1 * self.momentum[f'{layer}']
+                self.velocity[f'{layer}'] = (1 - b2) * self.gradients[f'W{layer}'] ** 2 + \
+                    b2 * self.velocity[f'{layer}']
+                
+                t_momentum = self.momentum[f'{layer}'] / (1 - b1 ** self.t)
+                t_velocity = self.velocity[f'{layer}'] / (1 - b2 ** self.t)
+
+                self.params[f'W{layer}'] -= lr * t_momentum / (np.sqrt(t_velocity) + eps)
+                self.params[f'b{layer}'] -= lr * self.gradients[f'b{layer}']
+
+            self.t += 1
         else:
             for layer in range(1, self.num_layers + 1):
                 self.params[f'W{layer}'] -= lr * self.gradients[f'W{layer}']
