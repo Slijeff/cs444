@@ -19,7 +19,7 @@ class TorchNeuralNet(nn.Module):
             else:
                 self.layers.append(nn.Linear(hidden_size, 3))
         self.layers.append(nn.Sigmoid())
-        self.layers = nn.ModuleList(self.layers)
+        # self.layers = nn.ModuleList(self.layers)
         self.layers = nn.Sequential(*self.layers)
 
     def forward(self, x):
