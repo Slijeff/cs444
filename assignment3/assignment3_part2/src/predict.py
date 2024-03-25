@@ -40,12 +40,13 @@ def decoder(pred):
         for j in range(grid_num):
             for b in range(2):
                 if mask[i, j, b] == 1:
-                    box = pred[i, j, b * 5 : b * 5 + 4]
+                    box = pred[i, j, b * 5: b * 5 + 4]
                     contain_prob = torch.FloatTensor([pred[i, j, b * 5 + 4]])
                     xy = (
                         torch.FloatTensor([j, i]) * cell_size
                     )  # upper left corner of grid cell
-                    box[:2] = box[:2] * cell_size + xy  # return cxcy relative to image
+                    # return cxcy relative to image
+                    box[:2] = box[:2] * cell_size + xy
                     box_xy = torch.FloatTensor(
                         box.size()
                     )  # convert[cx,cy,w,h] to [x1,xy1,x2,y2]
@@ -138,7 +139,8 @@ def predict_image(model, image_name, root_img_directory=""):
     img = transform(img)
     with torch.no_grad():
         img = Variable(img[None, :, :, :])
-        img = img.cuda()
+        # img = img.cuda()
+        img = img.to("mps")
 
         pred = model(img)  # 1xSxSx(B*5+C)
         pred = pred.cpu()

@@ -6,4 +6,6 @@ venv
 *.csv
 __pycache__
 *.tar.gz
-
+*.pth
+*.xml
+**/data
