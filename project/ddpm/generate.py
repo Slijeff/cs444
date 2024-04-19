@@ -4,6 +4,8 @@ from unet import Unet
 from ddpm import DDPM
 from configs.trainconfig import tc, TrainConfig
 import torch
+from utils import save_image_from_batch
+import math
 
 
 def generate(config: TrainConfig, progress: bool = True):
@@ -38,19 +40,16 @@ def generate(config: TrainConfig, progress: bool = True):
             config.device,
             save_progression_hook if progress else None
         )
-        grid = make_grid(samples, nrow=4, normalize=True, value_range=(0, 1))
-        # print(samples.shape)
-        plt.imshow(grid.cpu().permute(1, 2, 0))
-        plt.axis("off")
-        plt.savefig("./outputs/generate/plt.jpg", bbox_inches="tight")
 
+        save_image_from_batch(samples, "./outputs/generate/plt.jpg",
+                              math.floor(math.sqrt(config.generate_n_images)))
         if progress:
             prog.append(samples.cpu())
             prog = torch.cat(prog)
             # print(prog.shape)
             grid = make_grid(prog,
                              nrow=config.generate_n_images, normalize=True,
-                             value_range=(0, 1))
+                             value_range=(-1, 1))
             grid = grid.permute(1, 2, 0)
             plt.imshow(grid)
             plt.axis("off")

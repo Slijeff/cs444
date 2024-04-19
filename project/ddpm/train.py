@@ -9,6 +9,8 @@ from utils import save_image_from_batch
 
 from configs.trainconfig import TrainConfig, tc
 
+import os
+
 
 def train(config: TrainConfig):
     ddpm = DDPM(
@@ -31,7 +33,8 @@ def train(config: TrainConfig):
         shuffle=True,
         num_workers=2
     )
-    optim = config.optimizer(ddpm.parameters(), lr=config.lr)
+    optim = config.optimizer(
+        ddpm.parameters(), lr=config.lr, weight_decay=0.05)
     for epoch in trange(config.num_epoch):
         ddpm.train()
         for idx, (x, _) in enumerate(tqdm(dataloader, leave=False)):
@@ -44,14 +47,16 @@ def train(config: TrainConfig):
             if config.gradient_accumulation:
                 if (idx + 1) % config.gradient_accumulation == 0 \
                         or idx + 1 == len(dataloader):
+                    torch.nn.utils.clip_grad_norm_(ddpm.parameters(), 1.0)
                     optim.step()
                     optim.zero_grad()
             else:
+                torch.nn.utils.clip_grad_norm_(ddpm.parameters(), 1.0)
                 optim.step()
                 optim.zero_grad()
 
-        if config.generate_every and (epoch % config.generate_every == 0 or \
-                epoch == config.num_epoch - 1):
+        if config.generate_every and (epoch % config.generate_every == 0 or
+                                      epoch == config.num_epoch - 1):
             ddpm.eval()
             if config.seed:
                 torch.manual_seed(config.seed)
@@ -64,8 +69,10 @@ def train(config: TrainConfig):
                     config.device
                 )
                 samples = torch.cat((samples, x[:4]), dim=0)
+                os.makedirs(config.generate_output_path, exist_ok=True)
                 save_image_from_batch(
-                    samples, f"./outputs/train_sample_ep{epoch}.png",
+                    samples, os.path.join(
+                        config.generate_output_path, f"train_sample_ep{epoch}.png"),
                     config.generate_n_images // 2)
 
         torch.save(ddpm.state_dict(), config.checkpoint_path)

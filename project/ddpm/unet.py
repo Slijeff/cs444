@@ -12,7 +12,7 @@ class Conv3(nn.Module):
     ):
         super().__init__()
         # self.normalization = nn.BatchNorm2d(out_channels)
-        self.normalization = nn.GroupNorm(4, out_channels)
+        self.normalization = nn.GroupNorm(8, out_channels)
         self.preprocess = nn.Sequential(
             # retains original W & H dimension
             nn.Conv2d(in_channels, out_channels, 3, 1, 1),
@@ -83,56 +83,56 @@ class UnetUp(nn.Module):
         return self.upsample_method(x)
 
 
-# class Attention(nn.Module):
-#     def __init__(
-#         self,
-#         input_dim: int,
-#         embed_dim: int = 32,
-#         num_heads: int = 4
-#     ):
-#         super().__init__()
-#         # input should be (batch, w * h, channel)
-#         self.attn = nn.MultiheadAttention(
-#             embed_dim, num_heads, batch_first=True)
-#
-#         self.mapping = nn.Conv2d(input_dim, embed_dim, 1)
-#         self.out_mapping = nn.Conv2d(embed_dim, input_dim, 1)
-#
-#     def forward(self, x: torch.Tensor):
-#         w, h = x.shape[2:]
-#         x = self.mapping(x)
-#         x = rearrange(x, 'b c w h -> b (w h) c')
-#         attn, _ = self.attn(x, x, x, need_weights=False)
-#         x = rearrange(attn, 'b (w h) c -> b c w h', w=w, h=h)
-#         out = self.out_mapping(x)
-#         return out
-
-
 class Attention(nn.Module):
-    def __init__(self, dim, heads=2, dim_head=8):
+    def __init__(
+        self,
+        input_dim: int,
+        embed_dim: int = 32,
+        num_heads: int = 4
+    ):
         super().__init__()
-        self.scale = dim_head ** -0.5
-        self.heads = heads
-        hidden_dim = dim_head * heads
+        # input should be (batch, w * h, channel)
+        self.attn = nn.MultiheadAttention(
+            embed_dim, num_heads, batch_first=True)
 
-        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
-        self.to_out = nn.Conv2d(hidden_dim, dim, 1)
+        self.mapping = nn.Conv2d(input_dim, embed_dim, 1)
+        self.out_mapping = nn.Conv2d(embed_dim, input_dim, 1)
 
     def forward(self, x: torch.Tensor):
-        b, c, h, w = x.shape
-        qkv = self.to_qkv(x).chunk(3, dim=1)
-        q, k, v = map(lambda t: rearrange(
-            t, 'b (h c) x y -> b h c (x y)', h=self.heads), qkv)
+        w, h = x.shape[2:]
+        x = self.mapping(x)
+        x = rearrange(x, 'b c w h -> b (w h) c')
+        attn, _ = self.attn(x, x, x, need_weights=False)
+        x = rearrange(attn, 'b (w h) c -> b c w h', w=w, h=h)
+        out = self.out_mapping(x)
+        return out
 
-        q = q * self.scale
 
-        sim = torch.einsum('b h d i, b h d j -> b h i j', q, k)
-        attn = sim.softmax(dim=-1)
-        out = torch.einsum('b h i j, b h d j -> b h i d', attn, v)
-
-        out = rearrange(out, 'b h (x y) d -> b (h d) x y', x=h, y=w)
-        return self.to_out(out)
-
+# class Attention(nn.Module):
+#     def __init__(self, dim, heads=2, dim_head=8):
+#         super().__init__()
+#         self.scale = dim_head ** -0.5
+#         self.heads = heads
+#         hidden_dim = dim_head * heads
+#
+#         self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
+#         self.to_out = nn.Conv2d(hidden_dim, dim, 1)
+#
+#     def forward(self, x: torch.Tensor):
+#         b, c, h, w = x.shape
+#         qkv = self.to_qkv(x).chunk(3, dim=1)
+#         q, k, v = map(lambda t: rearrange(
+#             t, 'b (h c) x y -> b h c (x y)', h=self.heads), qkv)
+#
+#         q = q * self.scale
+#
+#         sim = torch.einsum('b h d i, b h d j -> b h i j', q, k)
+#         attn = sim.softmax(dim=-1)
+#         out = torch.einsum('b h i j, b h d j -> b h i d', attn, v)
+#
+#         out = rearrange(out, 'b h (x y) d -> b (h d) x y', x=h, y=w)
+#         return self.to_out(out)
+#
 class TimeStepEmbedding(nn.Module):
     '''
     Embeds a single time step faction to a n-dim vector.
@@ -189,7 +189,7 @@ class Unet(nn.Module):
                 4 * n_features,
                 4, 4
             ),
-            nn.GroupNorm(4, 4 * n_features),
+            nn.GroupNorm(8, 4 * n_features),
             nn.ReLU()
         )
         # time embedding
