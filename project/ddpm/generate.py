@@ -41,7 +41,7 @@ def generate(config: TrainConfig, progress: bool = True):
             save_progression_hook if progress else None
         )
 
-        save_image_from_batch(samples, "./outputs/generate/plt.jpg",
+        save_image_from_batch(samples, "./outputs/generate/plt_2.jpg",
                               math.floor(math.sqrt(config.generate_n_images)))
         if progress:
             prog.append(samples.cpu())
@@ -53,7 +53,7 @@ def generate(config: TrainConfig, progress: bool = True):
             grid = grid.permute(1, 2, 0)
             plt.imshow(grid)
             plt.axis("off")
-            plt.savefig("./outputs/generate/prog.jpg", bbox_inches="tight")
+            plt.savefig("./outputs/generate/prog_2.jpg", bbox_inches="tight")
 
 
 if __name__ == "__main__":

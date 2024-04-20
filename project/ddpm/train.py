@@ -8,6 +8,7 @@ from ddpm import DDPM
 from utils import save_image_from_batch
 
 from configs.trainconfig import TrainConfig, tc
+import math
 
 import os
 
@@ -73,7 +74,7 @@ def train(config: TrainConfig):
                 save_image_from_batch(
                     samples, os.path.join(
                         config.generate_output_path, f"train_sample_ep{epoch}.png"),
-                    config.generate_n_images // 2)
+                    math.floor(math.sqrt(config.generate_n_images + 4)))
 
         torch.save(ddpm.state_dict(), config.checkpoint_path)
 

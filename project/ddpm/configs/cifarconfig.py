@@ -19,9 +19,9 @@ class CIFARConfig(DataConfig):
                     (.5)
                 )
             ]),
-            download=False
+            download=True
         ),
-        range(2000))
+        range(10000))
 
 
 cifar_config = CIFARConfig()
