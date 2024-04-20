@@ -34,7 +34,7 @@ def train(config: TrainConfig):
         num_workers=2
     )
     optim = config.optimizer(
-        ddpm.parameters(), lr=config.lr, weight_decay=0.05)
+        ddpm.parameters(), lr=config.lr, weight_decay=0.01)
     for epoch in trange(config.num_epoch):
         ddpm.train()
         for idx, (x, _) in enumerate(tqdm(dataloader, leave=False)):

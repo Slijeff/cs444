@@ -7,14 +7,14 @@ from configs.dataconfig import DataConfig
 
 @dataclass
 class TrainConfig:
-    num_epoch = 10
+    num_epoch = 50
     device = "mps"
     checkpoint_path = "./checkpoints/cifar.pth"
     # checkpoint_path = "./checkpoints/ddpm_anime.pth"
     # checkpoint_path = None
     generate_every = 10
     generate_n_images = 8
-    generate_output_path = "./outputs/cifar_progress/190-200/"
+    generate_output_path = "./outputs/cifar_progress/250-300/"
     gradient_accumulation = 2
     batch_size = 32
     unet_features = 128
@@ -26,7 +26,7 @@ class TrainConfig:
     data: DataConfig = field(default_factory=lambda: cifar_config)
 
     optimizer: optim.Optimizer = optim.AdamW
-    lr = 1e-4
+    lr = 2e-4
 
 
 tc = TrainConfig()
