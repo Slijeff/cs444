@@ -21,7 +21,7 @@ class Agent():
 
         # These are hyper parameters for the DQN
         self.discount_factor = 0.99
-        self.epsilon = 1.0
+        self.epsilon = .5
         self.epsilon_min = 0.01
         self.explore_step = 500000
         self.epsilon_decay = (
@@ -49,13 +49,15 @@ class Agent():
     def get_action(self, state):
         if np.random.rand() <= self.epsilon:
             ### CODE ####
-            # Choose a random action
-            pass
+            action = torch.randint(0, self.action_size, (1,))[0]
         else:
             ### CODE ####
-            # Choose the best action
-            pass
-        return a
+            # state = torch.FloatTensor(state).unsqueeze(0).to(device)
+            state = torch.from_numpy(state).unsqueeze(0).to(device)
+            with torch.no_grad():
+                q_values = self.policy_net(state)
+                action = q_values.argmax()
+        return action
 
     # pick samples randomly from replay memory (with batch_size)
     def train_policy_net(self, frame):
@@ -78,27 +80,56 @@ class Agent():
 
         # Compute Q(s_t, a), the Q-value of the current state
         ### CODE ####
-        qv = self.policy_net(states).gather(1, actions.unsqueeze(1))
+        # V1:
+        # qv = self.policy_net(states).gather(1, actions.unsqueeze(1))
+        # V2:
+        # Q_values_all_actions_current = self.policy_net(states)
+        # Q_values_current = Q_values_all_actions_current.gather(1, actions.unsqueeze(dim=1))
+        # V3:
+        q_values = self.policy_net(states)
+        q_values = q_values.gather(1, actions.unsqueeze(1)).squeeze(1).cuda()
 
         # Compute Q function of next state
         ### CODE ####
-        next_qv = self.policy_net(next_states)
+        with torch.no_grad():
+            # V1
+            # next_qv = self.policy_net(torch.from_numpy(next_states).cuda())
+            # v2
+            # next_states = torch.from_numpy(next_states).to(device)
+            # Q_values_all_actions_next = self.policy_net(next_states)
+            # Q_values_maximum_next = Q_values_all_actions_next.max(dim=1)[0]
+            # v3
+            next_states = torch.FloatTensor(next_states).to(device)
+            next_q_values = self.policy_net(next_states).detach()
+
 
         # Find maximum Q-value of action at next state from policy net
         ### CODE ####
-        max_next_qv = next_qv.max(axis=1)[0].unsqueeze(1)
+        # v1
+        # max_next_qv = next_qv.max(dim=1)[0].unsqueeze(1)
+        # v2
+        # max_next_qv = next_qv.max(dim=1)[0]
+        # v3
+        max_next_q_values = next_q_values.max(1)[0]
 
         # Compute the Huber Loss
         ### CODE ####
-        hloss = nn.HuberLoss(
-            qv,
-            rewards.unsqueeze(1) + self.discount_factor *
-            max_next_qv * mask.unsqueeze(1)
-        )
+        # E_Q_values = self.discount_factor * mask.to(device) * Q_values_maximum_next + rewards
+        # hloss = F.huber_loss(Q_values_current.squeeze(dim=-1), E_Q_values)
+        # hloss = F.smooth_l1_loss(
+        #     qv.squeeze(-1),
+        #     rewards + self.discount_factor *
+        #     max_next_qv * mask.cuda(),
+        #     reduction = 'mean'
+        # )
+
+        target = rewards + mask.cuda() * self.discount_factor * max_next_q_values
+        hloss = F.huber_loss(q_values, target)
 
         # Optimize the model, .step() both the optimizer and the scheduler!
         ### CODE ####
         self.optimizer.zero_grad()
         hloss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 10.0)
         self.optimizer.step()
         self.scheduler.step()
