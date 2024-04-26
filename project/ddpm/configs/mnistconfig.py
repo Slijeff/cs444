@@ -22,7 +22,7 @@ class MNISTConfig(DataConfig):
             )
         ]),
         download=True
-    ), range(1000))
+    ), range(5000))
 
 
 mnist_config = MNISTConfig()

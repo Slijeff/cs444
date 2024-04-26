@@ -21,13 +21,13 @@ class Agent():
 
         # These are hyper parameters for the DQN
         self.discount_factor = 0.99
-        self.epsilon = .5
+        self.epsilon = 1
         self.epsilon_min = 0.01
         self.explore_step = 500000
         self.epsilon_decay = (
             self.epsilon - self.epsilon_min) / self.explore_step
         self.train_start = 100000
-        self.update_target = 1000
+        self.update_target = 100000
 
         # Generate the memory
         self.memory = ReplayMemory()
@@ -36,6 +36,10 @@ class Agent():
         self.policy_net = DQN(action_size)
         self.policy_net.to(device)
 
+        self.target_net = DQN(action_size)
+        self.target_net.to(device)
+        self.update_targetnet()
+
         self.optimizer = optim.Adam(
             params=self.policy_net.parameters(), lr=learning_rate)
         self.scheduler = optim.lr_scheduler.StepLR(
@@ -43,6 +47,9 @@ class Agent():
 
     def load_policy_net(self, path):
         self.policy_net = torch.load(path)
+
+    def update_targetnet(self):
+        self.target_net.load_state_dict(self.policy_net.state_dict())
 
     """Get action using policy net using epsilon-greedy policy"""
 
@@ -80,56 +87,27 @@ class Agent():
 
         # Compute Q(s_t, a), the Q-value of the current state
         ### CODE ####
-        # V1:
-        # qv = self.policy_net(states).gather(1, actions.unsqueeze(1))
-        # V2:
-        # Q_values_all_actions_current = self.policy_net(states)
-        # Q_values_current = Q_values_all_actions_current.gather(1, actions.unsqueeze(dim=1))
-        # V3:
-        q_values = self.policy_net(states)
-        q_values = q_values.gather(1, actions.unsqueeze(1)).squeeze(1).cuda()
+        qv = self.policy_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
 
         # Compute Q function of next state
         ### CODE ####
         with torch.no_grad():
-            # V1
-            # next_qv = self.policy_net(torch.from_numpy(next_states).cuda())
-            # v2
-            # next_states = torch.from_numpy(next_states).to(device)
-            # Q_values_all_actions_next = self.policy_net(next_states)
-            # Q_values_maximum_next = Q_values_all_actions_next.max(dim=1)[0]
-            # v3
-            next_states = torch.FloatTensor(next_states).to(device)
-            next_q_values = self.policy_net(next_states).detach()
-
+            next_qv = self.target_net(torch.from_numpy(next_states).to(device)).detach()
+        
 
         # Find maximum Q-value of action at next state from policy net
         ### CODE ####
-        # v1
-        # max_next_qv = next_qv.max(dim=1)[0].unsqueeze(1)
-        # v2
-        # max_next_qv = next_qv.max(dim=1)[0]
-        # v3
-        max_next_q_values = next_q_values.max(1)[0]
-
+        next_qv = next_qv.max(1)[0]
+        eq = rewards + next_qv * self.discount_factor * mask.to(device)
         # Compute the Huber Loss
         ### CODE ####
-        # E_Q_values = self.discount_factor * mask.to(device) * Q_values_maximum_next + rewards
-        # hloss = F.huber_loss(Q_values_current.squeeze(dim=-1), E_Q_values)
-        # hloss = F.smooth_l1_loss(
-        #     qv.squeeze(-1),
-        #     rewards + self.discount_factor *
-        #     max_next_qv * mask.cuda(),
-        #     reduction = 'mean'
-        # )
-
-        target = rewards + mask.cuda() * self.discount_factor * max_next_q_values
-        hloss = F.huber_loss(q_values, target)
+        loss = F.smooth_l1_loss(qv, eq)
 
         # Optimize the model, .step() both the optimizer and the scheduler!
         ### CODE ####
         self.optimizer.zero_grad()
-        hloss.backward()
-        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 10.0)
+        loss.backward()
+        for param in self.policy_net.parameters():
+            param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
         self.scheduler.step()
