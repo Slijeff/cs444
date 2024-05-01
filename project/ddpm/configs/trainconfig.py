@@ -21,7 +21,7 @@ attention dim = 16
 @dataclass
 class TrainConfig:
     num_epoch = 50
-    device = "cpu"
+    device = "cuda"
     checkpoint_path = "./checkpoints/anime.pth"
     # checkpoint_path = "./checkpoints/cifar_v2.pth"
     # checkpoint_path = "./checkpoints/mnist.pth"

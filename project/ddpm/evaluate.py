@@ -1,10 +1,10 @@
 from torchmetrics.image.fid import FrechetInceptionDistance
 from ddpm import DDPM
 from unet import Unet
-from .configs.trainconfig import tc, TrainConfig
+from configs.trainconfig import tc, TrainConfig
 from torch.utils.data import DataLoader
 import torch
-
+from tqdm import tqdm
 
 def computeFID(
     test_model_path: str,
@@ -37,6 +37,7 @@ def computeFID(
     with torch.no_grad():
         total_fake = 0
         while total_fake < n_images:
+            print("Getting fake distribution...")
             samples = ddpm.generate(
                 config.generate_n_images,
                 (config.data.image_channels,
@@ -50,7 +51,8 @@ def computeFID(
 
             total_fake += config.generate_n_images
 
-    for idx, (x, _) in enumerate(real_dataloader):
+    for idx, (x, _) in (t := tqdm(enumerate(real_dataloader))):
+        t.set_description("Getting real distribution")
         x = x.to(config.device)
         fid.update(x, real=True)
         if (idx + 1) * x.shape[0] > n_images:
@@ -61,7 +63,7 @@ def computeFID(
 
 if __name__ == "__main__":
     computeFID(
-        "./checkpoints/ddpm_anime.pth",
+        "./checkpoints/anime.pth",
         16,
         2048,
         tc,
