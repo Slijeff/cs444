@@ -16,13 +16,14 @@ def generate(config: TrainConfig, progress: bool = True):
             config.data.image_channels,
             n_features=config.unet_features
         ),
+        beta_schedule=config.beta_schedule,
         beta1=config.beta1,
         beta2=config.beta2,
         T=config.T,
         device=config.device
     ).to(config.device)
 
-    ddpm.load_state_dict(torch.load(config.checkpoint_path))
+    ddpm.load_state_dict(torch.load(config.checkpoint_path, map_location=torch.device(config.device)))
 
     prog = []
 

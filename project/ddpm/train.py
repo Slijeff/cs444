@@ -1,25 +1,34 @@
 from tqdm import tqdm, trange
 import torch
 from torch.utils.data import DataLoader
+# from ema_pytorch import EMA
 
 
 from unet import Unet
 from ddpm import DDPM
-from utils import save_image_from_batch
+from utils import save_image_from_batch, model_summary
 
 from configs.trainconfig import TrainConfig, tc
 import math
 
 import os
+import numpy as np
 
-
+# torch.backends.cudnn.enabled = False
+import gc
+torch.cuda.empty_cache()
+gc.collect()
 def train(config: TrainConfig):
     ddpm = DDPM(
         model=Unet(config.data.image_channels,
                    config.data.image_channels, n_features=config.unet_features),
+        beta_schedule=config.beta_schedule,
         beta1=config.beta1, beta2=config.beta2, T=config.T,
-        device=config.device
+        device=config.device,
+        criterion=config.criterion
     ).to(config.device)
+
+    model_summary(ddpm.unet)
 
     if config.checkpoint_path:
         try:
@@ -36,7 +45,8 @@ def train(config: TrainConfig):
     )
     optim = config.optimizer(
         ddpm.parameters(), lr=config.lr, weight_decay=0.01)
-    for epoch in trange(config.num_epoch):
+    for epoch in (t := trange(config.num_epoch)):
+        epoch_loss = []
         ddpm.train()
         for idx, (x, _) in enumerate(tqdm(dataloader, leave=False)):
             x = x.to(config.device)
@@ -44,15 +54,16 @@ def train(config: TrainConfig):
             if config.gradient_accumulation:
                 loss /= config.gradient_accumulation
             loss.backward()
-
+            epoch_loss.append(loss.item())
+            t.set_description(f"Last 10it Loss: {np.mean(epoch_loss[-10:])}")
             if config.gradient_accumulation:
                 if (idx + 1) % config.gradient_accumulation == 0 \
                         or idx + 1 == len(dataloader):
-                    torch.nn.utils.clip_grad_norm_(ddpm.parameters(), 1.0)
+                    torch.nn.utils.clip_grad_norm_(ddpm.parameters(), 5.0)
                     optim.step()
                     optim.zero_grad()
             else:
-                torch.nn.utils.clip_grad_norm_(ddpm.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(ddpm.parameters(), 5.0)
                 optim.step()
                 optim.zero_grad()
 
@@ -76,7 +87,8 @@ def train(config: TrainConfig):
                         config.generate_output_path, f"train_sample_ep{epoch}.png"),
                     math.floor(math.sqrt(config.generate_n_images + 4)))
 
-        torch.save(ddpm.state_dict(), config.checkpoint_path)
+        if config.checkpoint_path:
+            torch.save(ddpm.state_dict(), config.checkpoint_path)
 
 
 if __name__ == "__main__":

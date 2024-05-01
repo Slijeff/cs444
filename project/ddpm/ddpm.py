@@ -7,6 +7,7 @@ class DDPM(nn.Module):
     def __init__(
         self,
         model: nn.Module,
+        beta_schedule: str,
         beta1: float,
         beta2: float,
         T: int,
@@ -19,10 +20,10 @@ class DDPM(nn.Module):
         self.T = T
         self.criterion = criterion
         self.precomp = {k: v.to(device) for k, v in
-                        self.ddpm_schedules(beta1, beta2, T).items()}
+                        self.ddpm_schedules(beta1, beta2, T, beta_schedule).items()}
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        ts = torch.randint(1, self.T + 1, (x.shape[0], )).to(x.device)
+        ts = torch.randint(1, self.T, (x.shape[0], )).to(x.device)
         epsilon = torch.randn_like(x)
 
         x_t = self.precomp['alphabar_sqrt'][ts, None, None, None] * x + \
@@ -53,12 +54,24 @@ class DDPM(nn.Module):
 
         return x_i
 
-    def ddpm_schedules(self, beta1: float, beta2: float, T: int):
+    def ddpm_schedules(self, beta1: float, beta2: float, T: int, type):
 
-        beta_t = (beta2 - beta1) * torch.arange(
-            0,
-            T + 1
-        ) / T + beta1
+        if type == "linear":
+            beta_t = torch.linspace(beta1, beta2, T + 1)
+        elif type == "cosine":
+            """
+            cosine schedule as proposed in https://arxiv.org/abs/2102.09672
+            """
+            s = 0.008 # hyperparameter to tune
+            steps = T + 2
+            x = torch.linspace(0, T + 1, steps)
+            alphas_cumprod = torch.cos(((x / T) + s) / (1 + s) * torch.pi * 0.5) ** 2
+            alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
+            betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
+            beta_t = torch.clip(betas, 0.0001, 0.9999)
+
+        print(beta_t.shape)
+        assert beta_t.shape == (T + 1,)
         beta_t_sqrt = torch.sqrt(beta_t)
         alpha_t = 1 - beta_t
         alpha_t_log = torch.log(alpha_t)
