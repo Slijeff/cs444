@@ -34,6 +34,35 @@ class DDPM(nn.Module):
         )
         return self.criterion(epsilon, res)
 
+    def generate_ddim(self, n_sample: int, size, device, n_steps: int, hook=None):
+
+        times = torch.linspace(1, self.T, n_steps)
+        times = list(reversed(times.int().tolist()))
+        time_pairs = list(zip(times[:-1], times[1:]))
+
+        x_i = torch.randn(n_sample, *size, device=device)
+        for i, (time, next_time) in enumerate(tqdm(time_pairs, desc="Sampling DDIM...")):
+            pred_noise = self.unet(
+                x_i,
+                torch.tensor(time / self.T).to(device).repeat(n_sample, 1)
+            )
+            alpha_next = self.precomp['alphabar'][next_time]
+
+            x_start = (x_i * self.precomp['sqrt_recip_alphabar_cumprod'][time] -
+                       self.precomp['sqrt_recipm1_alphabar_cumprod'][time] * pred_noise)
+
+            if next_time == 1:
+                x_i = x_start
+                continue
+
+            x_i = x_start * alpha_next.sqrt() + \
+                (1 - alpha_next).sqrt() * pred_noise
+
+            if hook:
+                hook(i, x_i)
+
+        return x_i
+
     def generate(self, n_sample: int, size, device, hook=None) -> torch.Tensor:
         x_i = torch.randn(n_sample, *size).to(device)
 
@@ -62,10 +91,11 @@ class DDPM(nn.Module):
             """
             cosine schedule as proposed in https://arxiv.org/abs/2102.09672
             """
-            s = 0.008 # hyperparameter to tune
+            s = 0.008  # hyperparameter to tune
             steps = T + 2
             x = torch.linspace(0, T + 1, steps)
-            alphas_cumprod = torch.cos(((x / T) + s) / (1 + s) * torch.pi * 0.5) ** 2
+            alphas_cumprod = torch.cos(
+                ((x / T) + s) / (1 + s) * torch.pi * 0.5) ** 2
             alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
             betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
             beta_t = torch.clip(betas, 0.0001, 0.9999)
@@ -92,5 +122,7 @@ class DDPM(nn.Module):
             "alphabar": alphabar,
             "alphabar_sqrt": alphabar_sqrt,
             "sqrtmab": sqrtmab,
-            "inv_sqrtmab": inv_sqrtmab
+            "inv_sqrtmab": inv_sqrtmab,
+            "sqrt_recip_alphabar_cumprod": torch.sqrt(1 / alphabar),
+            "sqrt_recipm1_alphabar_cumprod": torch.sqrt(1 / alphabar - 1),
         }

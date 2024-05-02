@@ -9,12 +9,14 @@ def save_image_from_batch(x: torch.Tensor, path: str, nrow: int):
     plt.axis("off")
     plt.savefig(path, bbox_inches="tight")
 
+
 def model_summary(model):
     print("model_summary")
     print()
     print("Layer_name" + "\t" * 7 + "Number of Parameters")
     print("=" * 100)
-    model_parameters = [layer for layer in model.parameters() if layer.requires_grad]
+    model_parameters = [
+        layer for layer in model.parameters() if layer.requires_grad]
     layer_name = [child for child in model.children()]
     j = 0
     total_params = 0
@@ -27,7 +29,8 @@ def model_summary(model):
         except:
             bias = False
         if not bias:
-            param = model_parameters[j].numel() + model_parameters[j + 1].numel()
+            param = model_parameters[j].numel(
+            ) + model_parameters[j + 1].numel()
             j = j + 2
         else:
             param = model_parameters[j].numel()

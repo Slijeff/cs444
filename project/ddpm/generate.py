@@ -23,25 +23,36 @@ def generate(config: TrainConfig, progress: bool = True):
         device=config.device
     ).to(config.device)
 
-    ddpm.load_state_dict(torch.load(config.checkpoint_path, map_location=torch.device(config.device)))
+    ddpm.load_state_dict(torch.load(config.checkpoint_path,
+                         map_location=torch.device(config.device)))
 
     prog = []
 
     def save_progression_hook(i: int, x: torch.Tensor):
-        if i % 100 == 0 or i == config.T - 1:
+        if i % 10 == 0 or i == config.T - 1:
             prog.append(x.cpu())
 
     ddpm.eval()
     with torch.no_grad():
-        samples = ddpm.generate(
-            config.generate_n_images,
-            (config.data.image_channels,
-             config.data.image_size,
-             config.data.image_size),
-            config.device,
-            save_progression_hook if progress else None
-        )
-
+        if True:
+            samples = ddpm.generate_ddim(
+                config.generate_n_images,
+                (config.data.image_channels,
+                 config.data.image_size,
+                 config.data.image_size),
+                config.device,
+                100,
+                save_progression_hook if progress else None
+            )
+        else:
+            samples = ddpm.generate(
+                config.generate_n_images,
+                (config.data.image_channels,
+                 config.data.image_size,
+                 config.data.image_size),
+                config.device,
+                save_progression_hook if progress else None
+            )
         save_image_from_batch(samples, "./outputs/generate/plt_2.jpg",
                               math.floor(math.sqrt(config.generate_n_images)))
         if progress:

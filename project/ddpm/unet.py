@@ -84,7 +84,7 @@ class UnetUp(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, dim, heads=4, dim_head=16):
+    def __init__(self, dim, heads=2, dim_head=8):
         super().__init__()
         self.scale = dim_head ** -0.5
         self.heads = heads
@@ -107,6 +107,7 @@ class Attention(nn.Module):
 
         out = rearrange(out, 'b h (x y) d -> b (h d) x y', x=h, y=w)
         return self.to_out(out)
+
 
 class TimeStepEmbedding(nn.Module):
     '''
