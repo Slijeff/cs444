@@ -84,7 +84,7 @@ class UnetUp(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, dim, heads=4, dim_head=16):
+    def __init__(self, dim, heads=8, dim_head=32):
         super().__init__()
         self.scale = dim_head ** -0.5
         self.heads = heads
@@ -135,12 +135,16 @@ class Unet(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        n_features: int
+        n_features: int,
+        attn_head: int,
+        attn_dim: int
     ):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.n_features = n_features
+        self.attn_head = attn_head
+        self.attn_dim = attn_dim
 
         # convert image to starting features
         self.init = Conv3(in_channels, n_features, True)
@@ -149,9 +153,9 @@ class Unet(nn.Module):
         self.down1 = UnetDown(n_features, n_features)
         self.down2 = UnetDown(n_features, 2 * n_features)
         self.down3 = UnetDown(2 * n_features, 4 * n_features)
-        self.attndown1 = Attention(n_features)
-        self.attndown2 = Attention(2 * n_features)
-        self.attndown3 = Attention(4 * n_features)
+        self.attndown1 = Attention(n_features, self.attn_head,self.attn_dim)
+        self.attndown2 = Attention(2 * n_features, self.attn_head,self.attn_dim)
+        self.attndown3 = Attention(4 * n_features, self.attn_head,self.attn_dim)
 
         # bottleneck
         self.bottleneck_in = nn.Sequential(
@@ -176,9 +180,9 @@ class Unet(nn.Module):
         self.up1 = UnetUp(2 * 4 * n_features, 2 * n_features)
         self.up2 = UnetUp(2 * 2 * n_features, n_features)
         self.up3 = UnetUp(2 * 1 * n_features, n_features)
-        self.attnup1 = Attention(2 * n_features)
-        self.attnup2 = Attention(n_features)
-        self.attnup3 = Attention(n_features)
+        self.attnup1 = Attention(2 * n_features,self.attn_head,self.attn_dim)
+        self.attnup2 = Attention(n_features,self.attn_head,self.attn_dim)
+        self.attnup3 = Attention(n_features,self.attn_head,self.attn_dim)
 
         # final output
         self.out = nn.Conv2d(2 * n_features, self.out_channels, 3, 1, 1)

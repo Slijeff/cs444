@@ -14,10 +14,7 @@ class CIFARConfig(DataConfig):
             train=True,
             transform=transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    (.5,),
-                    (.5)
-                )
+                transforms.Lambda(lambda x: x * 2 - 1)
             ]),
             download=True
         ),
