@@ -14,7 +14,9 @@ def generate(config: TrainConfig, progress: bool = True):
         model=Unet(
             config.data.image_channels,
             config.data.image_channels,
-            n_features=config.unet_features
+            n_features=config.unet_features,
+            attn_head=config.attention_head, 
+            attn_dim=config.attention_dim
         ),
         beta_schedule=config.beta_schedule,
         beta1=config.beta1,
