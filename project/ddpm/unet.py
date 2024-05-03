@@ -12,7 +12,7 @@ class Conv3(nn.Module):
     ):
         super().__init__()
         # self.normalization = nn.BatchNorm2d(out_channels)
-        self.normalization = nn.GroupNorm(8, out_channels)
+        self.normalization = nn.GroupNorm(32, out_channels)
         self.preprocess = nn.Sequential(
             # retains original W & H dimension
             nn.Conv2d(in_channels, out_channels, 3, 1, 1),
@@ -168,7 +168,7 @@ class Unet(nn.Module):
                 4 * n_features,
                 4, 4
             ),
-            nn.GroupNorm(8, 4 * n_features),
+            nn.GroupNorm(32, 4 * n_features),
             nn.GELU()
         )
         # time embedding

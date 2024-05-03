@@ -47,7 +47,7 @@ def train(config: TrainConfig):
         num_workers=2
     )
     optim = config.optimizer(
-        ddpm.parameters(), lr=config.lr, weight_decay=0.01)
+        ddpm.parameters(), lr=config.lr)
     for epoch in (t := trange(config.num_epoch)):
         epoch_loss = []
         ddpm.train()
@@ -76,13 +76,23 @@ def train(config: TrainConfig):
             if config.seed:
                 torch.manual_seed(config.seed)
             with torch.no_grad():
-                samples = ddpm.generate(
-                    config.generate_n_images,
-                    (config.data.image_channels,
-                     config.data.image_size,
-                     config.data.image_size),
-                    config.device
-                )
+                if config.use_ddim:
+                    samples = ddpm.generate_ddim(
+                        config.generate_n_images,
+                        (config.data.image_channels,
+                         config.data.image_size,
+                         config.data.image_size),
+                        config.device,
+                        config.ddim_sampling_steps
+                    )
+                else:
+                    samples = ddpm.generate(
+                        config.generate_n_images,
+                        (config.data.image_channels,
+                         config.data.image_size,
+                         config.data.image_size),
+                        config.device
+                    )
                 samples = torch.cat((samples, x[:4]), dim=0)
                 os.makedirs(config.generate_output_path, exist_ok=True)
                 save_image_from_batch(

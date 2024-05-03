@@ -31,19 +31,23 @@ def generate(config: TrainConfig, progress: bool = True):
     prog = []
 
     def save_progression_hook(i: int, x: torch.Tensor):
-        if i % 10 == 0 or i == config.T - 1:
-            prog.append(x.cpu())
+        if config.use_ddim:
+            if i % 10 == 0:
+                prog.append(x.cpu())
+        else:
+            if i % 100 == 0 or config.T - 1 == i:
+                prog.append(x.cpu())
 
     ddpm.eval()
     with torch.no_grad():
-        if True:
+        if config.use_ddim:
             samples = ddpm.generate_ddim(
                 config.generate_n_images,
                 (config.data.image_channels,
                  config.data.image_size,
                  config.data.image_size),
                 config.device,
-                100,
+                config.ddim_sampling_steps,
                 save_progression_hook if progress else None
             )
         else:

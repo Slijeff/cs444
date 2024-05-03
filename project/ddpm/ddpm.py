@@ -41,7 +41,7 @@ class DDPM(nn.Module):
         time_pairs = list(zip(times[:-1], times[1:]))
 
         x_i = torch.randn(n_sample, *size, device=device)
-        for i, (time, next_time) in enumerate(tqdm(time_pairs, desc="Sampling DDIM...")):
+        for i, (time, next_time) in enumerate(tqdm(time_pairs, desc="Sampling DDIM...", leave=False)):
             pred_noise = self.unet(
                 x_i,
                 torch.tensor(time / self.T).to(device).repeat(n_sample, 1)
@@ -50,6 +50,8 @@ class DDPM(nn.Module):
 
             x_start = (x_i * self.precomp['sqrt_recip_alphabar_cumprod'][time] -
                        self.precomp['sqrt_recipm1_alphabar_cumprod'][time] * pred_noise)
+            # very important in implementation, leads to very unstable/noisy image if not clamp
+            x_start = x_start.clamp(-1, 1)
 
             if next_time == 1:
                 x_i = x_start
@@ -100,7 +102,6 @@ class DDPM(nn.Module):
             betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
             beta_t = torch.clip(betas, 0.0001, 0.9999)
 
-        print(beta_t.shape)
         assert beta_t.shape == (T + 1,)
         beta_t_sqrt = torch.sqrt(beta_t)
         alpha_t = 1 - beta_t
