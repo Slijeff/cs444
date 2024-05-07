@@ -14,15 +14,14 @@ class MNISTConfig(DataConfig):
         transform=transforms.Compose([
             transforms.ToTensor(),
             transforms.Pad(2),
+            # transforms.Lambda(lambda x: (x * 2) - 1),
             transforms.Normalize(
-                # (0.0981, ),
-                # (0.2725, )
                 (0.5, ),
                 (0.5, )
             )
         ]),
         download=True
-    ), range(5000))
+    ), range(10000))
 
 
 mnist_config = MNISTConfig()

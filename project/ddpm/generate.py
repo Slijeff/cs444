@@ -1,23 +1,26 @@
 from torchvision.utils import save_image, make_grid
 import matplotlib.pyplot as plt
-from unet import Unet
+# from unet import Unet
+from unet_v2 import Unet
 from ddpm import DDPM
 from configs.trainconfig import tc, TrainConfig
 import torch
 from utils import save_image_from_batch
 import math
+import random
 
 
 def generate(config: TrainConfig, progress: bool = True):
-    # torch.manual_seed(129)
+    # torch.manual_seed(random.randint(100, 500))
     ddpm = DDPM(
-        model=Unet(
-            config.data.image_channels,
-            config.data.image_channels,
-            n_features=config.unet_features,
-            attn_head=config.attention_head, 
-            attn_dim=config.attention_dim
-        ),
+        # model=Unet(
+        #     config.data.image_channels,
+        #     config.data.image_channels,
+        #     n_features=config.unet_features,
+        #     attn_head=config.attention_head, 
+        #     attn_dim=config.attention_dim
+        # ),
+        model = Unet(dim=config.unet_features, channels=config.data.image_channels, dim_mults=(1,2,4,8,16), time_emb_dim=64),
         beta_schedule=config.beta_schedule,
         beta1=config.beta1,
         beta2=config.beta2,
@@ -31,26 +34,18 @@ def generate(config: TrainConfig, progress: bool = True):
     prog = []
 
     def save_progression_hook(i: int, x: torch.Tensor):
-        if config.use_ddim:
-            if i % 10 == 0:
-                prog.append(x.cpu())
-        else:
-            if i % 100 == 0 or config.T - 1 == i:
-                prog.append(x.cpu())
+        # if config.use_ddim:
+        #     if i % 10 == 0:
+        #         prog.append(x.cpu())
+        # else:
+        #     if i % 100 == 0 or config.T - 1 == i:
+        #         prog.append(x.cpu())
+        if i % 10 == 0:
+            prog.append(x.cpu())
 
     ddpm.eval()
     with torch.no_grad():
-        if config.use_ddim:
-            samples = ddpm.generate_ddim(
-                config.generate_n_images,
-                (config.data.image_channels,
-                 config.data.image_size,
-                 config.data.image_size),
-                config.device,
-                config.ddim_sampling_steps,
-                save_progression_hook if progress else None
-            )
-        else:
+        if config.use_ddpm:
             samples = ddpm.generate(
                 config.generate_n_images,
                 (config.data.image_channels,
@@ -59,7 +54,19 @@ def generate(config: TrainConfig, progress: bool = True):
                 config.device,
                 save_progression_hook if progress else None
             )
-        save_image_from_batch(samples, "./outputs/generate/plt_2.jpg",
+            save_image_from_batch(samples, "./outputs/generate/plt_ddpm.jpg",
+                              math.floor(math.sqrt(config.generate_n_images)))
+            
+        samples = ddpm.generate_ddim(
+            config.generate_n_images,
+            (config.data.image_channels,
+             config.data.image_size,
+             config.data.image_size),
+            config.device,
+            config.ddim_sampling_steps,
+            save_progression_hook if progress else None
+        )
+        save_image_from_batch(samples, "./outputs/generate/plt.jpg",
                               math.floor(math.sqrt(config.generate_n_images)))
         if progress:
             prog.append(samples.cpu())
@@ -71,7 +78,7 @@ def generate(config: TrainConfig, progress: bool = True):
             grid = grid.permute(1, 2, 0)
             plt.imshow(grid)
             plt.axis("off")
-            plt.savefig("./outputs/generate/prog_2.jpg", bbox_inches="tight")
+            plt.savefig("./outputs/generate/prog.jpg", bbox_inches="tight")
 
 
 if __name__ == "__main__":

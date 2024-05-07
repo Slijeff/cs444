@@ -23,14 +23,16 @@ class DDPM(nn.Module):
                         self.ddpm_schedules(beta1, beta2, T, beta_schedule).items()}
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        ts = torch.randint(1, self.T, (x.shape[0], )).to(x.device)
+        ts = torch.randint(1, self.T + 1, (x.shape[0], ), device=x.device).long()
         epsilon = torch.randn_like(x)
 
         x_t = self.precomp['alphabar_sqrt'][ts, None, None, None] * x + \
             self.precomp['sqrtmab'][ts, None, None, None] * epsilon
 
         res = self.unet(
-            x_t, ts / self.T
+            x_t, 
+            ts / self.T
+            # ts
         )
         return self.criterion(epsilon, res)
 
@@ -44,7 +46,9 @@ class DDPM(nn.Module):
         for i, (time, next_time) in enumerate(tqdm(time_pairs, desc="Sampling DDIM...", leave=False)):
             pred_noise = self.unet(
                 x_i,
-                torch.tensor(time / self.T).to(device).repeat(n_sample, 1)
+                # torch.tensor(time / self.T).to(device).repeat(n_sample, 1)
+                torch.tensor(time / self.T).to(device).unsqueeze(0),
+                # torch.tensor(time, device=device).long().unsqueeze(0),
             )
             alpha_next = self.precomp['alphabar'][next_time]
 
@@ -53,17 +57,47 @@ class DDPM(nn.Module):
             # very important in implementation, leads to very unstable/noisy image if not clamp
             x_start = x_start.clamp(-1, 1)
 
-            if next_time == 1:
+            if next_time <= 1:
                 x_i = x_start
                 continue
 
+            # rederived_noise = x_i * self.precomp['sqrt_recip_alphabar_cumprod'][time] - x_start / \
+            #                 self.precomp['sqrt_recipm1_alphabar_cumprod'][time]
+
             x_i = x_start * alpha_next.sqrt() + \
-                (1 - alpha_next).sqrt() * pred_noise
+                (1 - alpha_next).sqrt() * pred_noise 
 
             if hook:
                 hook(i, x_i)
 
         return x_i
+
+    def generate_improve(self, n_sample: int, size, device, hook=None) -> torch.Tensor:
+        '''
+        Improved sampling technique.
+        '''
+        x_i = torch.randn(n_sample, *size).to(device)
+
+        pbar = tqdm(range(self.T, 0, -1), desc="Sampling Improved...", leave=False)
+
+        for i in pbar:
+            z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
+            eps = self.unet(
+                x_i,
+                torch.tensor(i / self.T).to(device).unsqueeze(0),
+            )
+
+            x_0 = self.precomp['inverse_sqrt_alpha'][i] * x_i - \
+                self.precomp['sqrt_recipm1_alphabar_cumprod'][i] * eps
+
+            mu = x_0 * self.precomp['mean_x0_coef'][i] + self.precomp['mean_xt_coef'][i] * x_i
+
+            x_i = mu + (0.5 * self.precomp['log_variance'][i]).exp() * z
+
+            if hook:
+                hook(i, x_i)
+
+        return x_i * 2
 
     def generate(self, n_sample: int, size, device, hook=None) -> torch.Tensor:
         x_i = torch.randn(n_sample, *size).to(device)
@@ -74,7 +108,7 @@ class DDPM(nn.Module):
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
             eps = self.unet(
                 x_i,
-                torch.tensor(i / self.T).to(device).repeat(n_sample, 1)
+                torch.tensor(i / self.T).to(device).unsqueeze(0),
             )
             x_i = self.precomp['inverse_sqrt_alpha'][i] * \
                 (x_i - eps * self.precomp['inv_sqrtmab'][i]) + \
@@ -84,6 +118,18 @@ class DDPM(nn.Module):
                 hook(i, x_i)
 
         return x_i
+
+
+    def interpolate(self, img1, img2, lambda_ = 0.5):
+        assert img1.shape == img2.shape
+        ts = 1000
+        epsilon = torch.randn_like(img1)
+        noised_1 = self.precomp['alphabar_sqrt'][ts, None, None, None] * img1 + \
+            self.precomp['sqrtmab'][ts, None, None, None] * epsilon
+        noised_2 = self.precomp['alphabar_sqrt'][ts, None, None, None] * img2 + \
+            self.precomp['sqrtmab'][ts, None, None, None] * epsilon
+        merged = (1 - lambda_) * noised_1 + lambda_ * noised_2
+        
 
     def ddpm_schedules(self, beta1: float, beta2: float, T: int, type):
 
@@ -116,6 +162,12 @@ class DDPM(nn.Module):
         sqrtmab = torch.sqrt(1 - alphabar)
         inv_sqrtmab = (1 - alpha_t) / sqrtmab
 
+        alphabar_prev = torch.cat([torch.tensor([1.]), alphabar[:-1]])
+        mean_x0_coef = beta_t * torch.sqrt(alphabar_prev) / (1.0 - alphabar)
+        mean_xt_coef = (1. - alphabar_prev) * torch.sqrt(1 - beta_t) / (1. - alphabar)
+        variance = beta_t * (1. - alphabar_prev) / (1. - alphabar)
+        log_var = torch.log(torch.clamp(variance, min=1e-20))
+
         return {
             "alpha_t": alpha_t,
             "inverse_sqrt_alpha": inverse_sqrt_alpha,
@@ -126,4 +178,7 @@ class DDPM(nn.Module):
             "inv_sqrtmab": inv_sqrtmab,
             "sqrt_recip_alphabar_cumprod": torch.sqrt(1 / alphabar),
             "sqrt_recipm1_alphabar_cumprod": torch.sqrt(1 / alphabar - 1),
+            "mean_x0_coef": mean_x0_coef,
+            "mean_xt_coef": mean_xt_coef,
+            "log_variance": log_var
         }

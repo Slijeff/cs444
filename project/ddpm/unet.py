@@ -8,11 +8,10 @@ class Conv3(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        residual: bool = False
+        residual: bool = True
     ):
         super().__init__()
-        # self.normalization = nn.BatchNorm2d(out_channels)
-        self.normalization = nn.GroupNorm(32, out_channels)
+        self.normalization = nn.GroupNorm(8, out_channels)
         self.preprocess = nn.Sequential(
             # retains original W & H dimension
             nn.Conv2d(in_channels, out_channels, 3, 1, 1),
@@ -44,9 +43,9 @@ class UnetDown(nn.Module):
         out_channels: int
     ):
         super().__init__()
-        self.downsample_method = nn.MaxPool2d(2)
+        self.downsample_method = nn.AvgPool2d(2)
         self.layers = nn.Sequential(
-            Conv3(in_channels, out_channels, True),
+            Conv3(in_channels, out_channels),
             self.downsample_method
         )
 
@@ -62,7 +61,7 @@ class UnetUp(nn.Module):
     ):
         super().__init__()
         self.upsample_method = nn.Sequential(
-            nn.Upsample(scale_factor=2, mode='bilinear'),
+            nn.Upsample(scale_factor=2, mode='nearest'),
             Conv3(in_channels, out_channels, True)
         )
         # self.upsample_method = nn.ConvTranspose2d(
@@ -72,8 +71,8 @@ class UnetUp(nn.Module):
         # )
         self.layers = nn.Sequential(
             self.upsample_method,
-            Conv3(out_channels, out_channels, True),
-            Conv3(out_channels, out_channels, True)
+            Conv3(out_channels, out_channels),
+            Conv3(out_channels, out_channels)
         )
 
     def forward(self,
@@ -153,9 +152,10 @@ class Unet(nn.Module):
         self.down1 = UnetDown(n_features, n_features)
         self.down2 = UnetDown(n_features, 2 * n_features)
         self.down3 = UnetDown(2 * n_features, 4 * n_features)
-        self.attndown1 = Attention(n_features, self.attn_head,self.attn_dim)
-        self.attndown2 = Attention(2 * n_features, self.attn_head,self.attn_dim)
-        self.attndown3 = Attention(4 * n_features, self.attn_head,self.attn_dim)
+        self.attndown1 = Attention(n_features, self.attn_head, self.attn_dim)
+        self.attndown2 = Attention(2 * n_features, self.attn_head, self.attn_dim)
+        self.attndown3 = Attention(4 * n_features, self.attn_head, self.attn_dim)
+        
 
         # bottleneck
         self.bottleneck_in = nn.Sequential(
@@ -168,18 +168,18 @@ class Unet(nn.Module):
                 4 * n_features,
                 4, 4
             ),
-            nn.GroupNorm(32, 4 * n_features),
+            nn.GroupNorm(8, 4 * n_features),
             nn.GELU()
         )
         # time embedding
         self.time1 = TimeStepEmbedding(4 * n_features)
         self.time2 = TimeStepEmbedding(2 * n_features)
-        self.time3 = TimeStepEmbedding(n_features)
+        self.time3 = TimeStepEmbedding(1 * n_features)
 
         # the same goes for upsampling layers
         self.up1 = UnetUp(2 * 4 * n_features, 2 * n_features)
         self.up2 = UnetUp(2 * 2 * n_features, n_features)
-        self.up3 = UnetUp(2 * 1 * n_features, n_features)
+        self.up3 = UnetUp(2 * n_features, n_features)
         self.attnup1 = Attention(2 * n_features,self.attn_head,self.attn_dim)
         self.attnup2 = Attention(n_features,self.attn_head,self.attn_dim)
         self.attnup3 = Attention(n_features,self.attn_head,self.attn_dim)
@@ -193,25 +193,25 @@ class Unet(nn.Module):
         t: torch.Tensor
     ) -> torch.Tensor:
         x = self.init(x)
+        temb1 = self.time1(t).view(-1, self.n_features * 4, 1, 1)
+        temb2 = self.time2(t).view(-1, self.n_features * 2, 1, 1)
+        temb3 = self.time3(t).view(-1, self.n_features * 1, 1, 1)
 
-        d1 = self.down1(x)
+        d1 = self.down1(x) + temb3
         d1 = self.attndown1(d1)
 
-        d2 = self.down2(d1)
+        d2 = self.down2(d1) + temb2
         d2 = self.attndown2(d2)
 
-        d3 = self.down3(d2)
+        d3 = self.down3(d2) + temb1
         d3 = self.attndown3(d3)
 
         bneck = self.bottleneck_in(d3)
-        temb1 = self.time1(t).view(-1, self.n_features * 4, 1, 1)
         bneck = self.bottleneck_out(bneck + temb1)
 
-        temb2 = self.time2(t).view(-1, self.n_features * 2, 1, 1)
         u1 = self.up1(bneck, d3) + temb2
         u1 = self.attnup1(u1)
 
-        temb3 = self.time3(t).view(-1, self.n_features, 1, 1)
         u2 = self.up2(u1, d2) + temb3
         u2 = self.attnup2(u2)
 

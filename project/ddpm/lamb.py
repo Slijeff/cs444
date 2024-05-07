@@ -86,7 +86,7 @@ class Lamb(Optimizer):
 
     def __init__(
             self, params, lr=1e-3, bias_correction=True, betas=(0.9, 0.999), eps=1e-6,
-            weight_decay=0.01, grad_averaging=True, max_grad_norm=1.0, trust_clip=False, always_adapt=False):
+            weight_decay=0.01, grad_averaging=True, max_grad_norm=1.0, trust_clip=True, always_adapt=False):
         defaults = dict(
             lr=lr, bias_correction=bias_correction, betas=betas, eps=eps, weight_decay=weight_decay,
             grad_averaging=grad_averaging, max_grad_norm=max_grad_norm,

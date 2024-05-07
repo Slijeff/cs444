@@ -8,24 +8,19 @@ from torchvision.transforms import Compose, ToTensor, Resize, Lambda
 from torch.utils.data import Dataset
 from PIL import Image
 
-from dataset.animeface import AnimeFace
+from dataset.cats import Cat
 
 
 @dataclass
-class AnimeConfig(DataConfig):
+class CatConfig(DataConfig):
 
-    dataset: Subset = Subset(AnimeFace(
+    dataset: Subset = Cat(
         transform=transforms.Compose([
             transforms.ToTensor(),
-            transforms.Resize(64, antialias=True),
             transforms.RandomHorizontalFlip(),
             Lambda(lambda x : (x * 2) - 1)
         ]),
-    ), range(10000))
+    )
 
 
-anime_config = AnimeConfig()
-# print(animeconfig.image_size)
-# print(animeconfig.image_mean)
-# print(animeconfig.image_std)
-# print(animeconfig.image_value_range)
+cat_config = CatConfig()
