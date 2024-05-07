@@ -52,8 +52,24 @@ attention dim = 32
 
 @dataclass
 class TrainConfig:
+    '''
+    To train:
+        1. set the checkpoint_path to a new path to save new weights
+        2. adjust hyperparameters
+        3. If use_ddpm = True, it would sample using ddpm during training, otherwise DDIM
+        4. change the data field with corresponding data config (...lambda: your_config)
+        5. run `python train.py`
+    
+    To inference:
+        1. set the checkpoint_path to a previously saved weights
+        2. change the data field with corresponding data config (...lambda: your_config), because
+            the source data is used for determining image shape info
+        3. If use_ddpm = True, it would sample using both DDIM and DDPM, otherwise DDIM only
+        4. run `python generate.py`, the image save path is ./outputs/generate/
+    '''
+    
     # HYPERPARAMS
-    num_epoch = 65
+    num_epoch = 100
     device = "cuda"
     # checkpoint_path = "./checkpoints/anime_scale.pth"
     # checkpoint_path = "./checkpoints/cifar_v4.pth"
@@ -64,15 +80,15 @@ class TrainConfig:
     # checkpoint_path = "./checkpoints/mnist_scale.pth"
     # checkpoint_path = "./checkpoints/mnist_small.pth"
     # checkpoint_path = "./checkpoints/mnist_v4.pth"
-    checkpoint_path = "./checkpoints/mnist_v5.pth"
+    # checkpoint_path = "./checkpoints/mnist_v5.pth"
     # checkpoint_path = "./checkpoints/ddpm_anime.pth"
     # checkpoint_path = "./checkpoints/anime_v5.pth"
     # checkpoint_path = "./checkpoints/cat_v5.pth"
-    # checkpoint_path = "./checkpoints/cat.pth"
+    checkpoint_path = "./checkpoints/cat.pth"
     # checkpoint_path = None
-    generate_every = 5
+    generate_every = 2
     generate_n_images = 16
-    generate_output_path = "./outputs/anime_v5_progress/35-100"
+    generate_output_path = "./outputs/anime_v5_progress/88-188"
     gradient_accumulation = None
     batch_size = 32
     ddim_sampling_steps = 45
@@ -81,8 +97,6 @@ class TrainConfig:
     # NETWORK RELATED
     unet_features = 240
     criterion = nn.MSELoss()
-    # attention_head = 2
-    # attention_dim = 8
 
     # SCHEDULING
     beta_schedule = "linear"
@@ -92,7 +106,7 @@ class TrainConfig:
     
     seed = 444
 
-    data: DataConfig = field(default_factory=lambda: mnist_config)
+    data: DataConfig = field(default_factory=lambda: cat_config)
 
     optimizer: optim.Optimizer = optim.Adam
     lr = 1e-5

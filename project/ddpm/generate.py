@@ -1,7 +1,6 @@
 from torchvision.utils import save_image, make_grid
 import matplotlib.pyplot as plt
-# from unet import Unet
-from unet_v2 import Unet
+from unet import Unet
 from ddpm import DDPM
 from configs.trainconfig import tc, TrainConfig
 import torch
@@ -12,14 +11,8 @@ import random
 
 def generate(config: TrainConfig, progress: bool = True):
     # torch.manual_seed(random.randint(100, 500))
+    torch.manual_seed(123)
     ddpm = DDPM(
-        # model=Unet(
-        #     config.data.image_channels,
-        #     config.data.image_channels,
-        #     n_features=config.unet_features,
-        #     attn_head=config.attention_head, 
-        #     attn_dim=config.attention_dim
-        # ),
         model = Unet(dim=config.unet_features, channels=config.data.image_channels, dim_mults=(1,2,4,8,16), time_emb_dim=64),
         beta_schedule=config.beta_schedule,
         beta1=config.beta1,
@@ -40,10 +33,11 @@ def generate(config: TrainConfig, progress: bool = True):
         # else:
         #     if i % 100 == 0 or config.T - 1 == i:
         #         prog.append(x.cpu())
-        if i % 10 == 0:
+        if i % 100 == 0:
             prog.append(x.cpu())
 
     ddpm.eval()
+    ddpm.unet.eval()
     with torch.no_grad():
         if config.use_ddpm:
             samples = ddpm.generate(

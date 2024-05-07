@@ -24,4 +24,3 @@ class CIFARConfig(DataConfig):
 
 
 cifar_config = CIFARConfig()
-# print(cifar_config.image_shape)

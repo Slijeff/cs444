@@ -32,10 +32,10 @@ class DDPM(nn.Module):
         res = self.unet(
             x_t, 
             ts / self.T
-            # ts
         )
         return self.criterion(epsilon, res)
 
+    @torch.inference_mode()
     def generate_ddim(self, n_sample: int, size, device, n_steps: int, hook=None):
 
         times = torch.linspace(1, self.T, n_steps)
@@ -46,9 +46,7 @@ class DDPM(nn.Module):
         for i, (time, next_time) in enumerate(tqdm(time_pairs, desc="Sampling DDIM...", leave=False)):
             pred_noise = self.unet(
                 x_i,
-                # torch.tensor(time / self.T).to(device).repeat(n_sample, 1)
                 torch.tensor(time / self.T).to(device).unsqueeze(0),
-                # torch.tensor(time, device=device).long().unsqueeze(0),
             )
             alpha_next = self.precomp['alphabar'][next_time]
 
@@ -61,9 +59,6 @@ class DDPM(nn.Module):
                 x_i = x_start
                 continue
 
-            # rederived_noise = x_i * self.precomp['sqrt_recip_alphabar_cumprod'][time] - x_start / \
-            #                 self.precomp['sqrt_recipm1_alphabar_cumprod'][time]
-
             x_i = x_start * alpha_next.sqrt() + \
                 (1 - alpha_next).sqrt() * pred_noise 
 
@@ -71,7 +66,8 @@ class DDPM(nn.Module):
                 hook(i, x_i)
 
         return x_i
-
+    
+    @torch.inference_mode()
     def generate_improve(self, n_sample: int, size, device, hook=None) -> torch.Tensor:
         '''
         Improved sampling technique.
@@ -87,8 +83,9 @@ class DDPM(nn.Module):
                 torch.tensor(i / self.T).to(device).unsqueeze(0),
             )
 
-            x_0 = self.precomp['inverse_sqrt_alpha'][i] * x_i - \
+            x_0 = self.precomp['sqrt_recip_alphabar_cumprod'][i] * x_i - \
                 self.precomp['sqrt_recipm1_alphabar_cumprod'][i] * eps
+            x_0 = x_0.clamp(-1, 1)
 
             mu = x_0 * self.precomp['mean_x0_coef'][i] + self.precomp['mean_xt_coef'][i] * x_i
 
@@ -97,8 +94,9 @@ class DDPM(nn.Module):
             if hook:
                 hook(i, x_i)
 
-        return x_i * 2
+        return x_i
 
+    @torch.inference_mode()
     def generate(self, n_sample: int, size, device, hook=None) -> torch.Tensor:
         x_i = torch.randn(n_sample, *size).to(device)
 
@@ -119,16 +117,43 @@ class DDPM(nn.Module):
 
         return x_i
 
-
-    def interpolate(self, img1, img2, lambda_ = 0.5):
+    
+    @torch.inference_mode()
+    def interpolate_once(self, img1, img2, lambda_ = 0.5, device="cuda"):
         assert img1.shape == img2.shape
-        ts = 1000
+        ts = 450
         epsilon = torch.randn_like(img1)
         noised_1 = self.precomp['alphabar_sqrt'][ts, None, None, None] * img1 + \
             self.precomp['sqrtmab'][ts, None, None, None] * epsilon
         noised_2 = self.precomp['alphabar_sqrt'][ts, None, None, None] * img2 + \
             self.precomp['sqrtmab'][ts, None, None, None] * epsilon
         merged = (1 - lambda_) * noised_1 + lambda_ * noised_2
+        x_i = merged
+        x_i = x_i.unsqueeze(0)
+        pbar = tqdm(range(ts, 0, -1), desc="Sampling Interpolation...", leave=False)
+        for i in pbar:
+            z = torch.randn(1, *(merged.shape)).to(device) if i > 1 else 0
+            eps = self.unet(
+                x_i,
+                torch.tensor(i / self.T).to(device).unsqueeze(0),
+            )
+            x_0 = self.precomp['sqrt_recip_alphabar_cumprod'][i] * x_i - \
+                self.precomp['sqrt_recipm1_alphabar_cumprod'][i] * eps
+            x_0 = x_0.clamp(-1, 1)
+            mu = x_0 * self.precomp['mean_x0_coef'][i] + self.precomp['mean_xt_coef'][i] * x_i
+            x_i = mu + (0.5 * self.precomp['log_variance'][i]).exp() * z
+
+        return x_i
+
+    @torch.inference_mode()
+    def interpolate(self, img1, img2, interpolate_steps = 5):
+        lambdas = torch.linspace(0, 1, interpolate_steps)
+        start = [img1.clone().detach().cpu()]
+        for l in lambdas:
+            start.append(self.interpolate_once(img1, img2, l).squeeze(0).cpu())
+
+        start.append(img2.clone().detach().cpu())
+        return start
         
 
     def ddpm_schedules(self, beta1: float, beta2: float, T: int, type):

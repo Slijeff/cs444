@@ -21,11 +21,7 @@ class AnimeConfig(DataConfig):
             transforms.RandomHorizontalFlip(),
             Lambda(lambda x : (x * 2) - 1)
         ]),
-    ), range(10000))
+    ), range(20000))
 
 
 anime_config = AnimeConfig()
-# print(animeconfig.image_size)
-# print(animeconfig.image_mean)
-# print(animeconfig.image_std)
-# print(animeconfig.image_value_range)

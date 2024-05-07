@@ -1,223 +1,105 @@
 import torch
-import torch.nn as nn
+from torch import nn
+import math
+import einops
 from einops import rearrange
 
-
-class Conv3(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        residual: bool = True
-    ):
-        super().__init__()
-        self.normalization = nn.GroupNorm(8, out_channels)
-        self.preprocess = nn.Sequential(
-            # retains original W & H dimension
-            nn.Conv2d(in_channels, out_channels, 3, 1, 1),
-            self.normalization,
-            nn.GELU()
-        )
-        self.conv = nn.Sequential(
-            nn.Conv2d(out_channels, out_channels, 3, 1, 1),
-            self.normalization,
-            nn.GELU(),
-            nn.Conv2d(out_channels, out_channels, 3, 1, 1),
-            self.normalization,
-            nn.GELU()
-        )
-        self.residual = residual
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.preprocess(x)
-        if self.residual:
-            x = x + self.conv(x)
-            return x / 1.414
-        return self.conv(x)
-
-
-class UnetDown(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int
-    ):
-        super().__init__()
-        self.downsample_method = nn.AvgPool2d(2)
-        self.layers = nn.Sequential(
-            Conv3(in_channels, out_channels),
-            self.downsample_method
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.layers(x)
-
-
-class UnetUp(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int
-    ):
-        super().__init__()
-        self.upsample_method = nn.Sequential(
-            nn.Upsample(scale_factor=2, mode='nearest'),
-            Conv3(in_channels, out_channels, True)
-        )
-        # self.upsample_method = nn.ConvTranspose2d(
-        #     in_channels,
-        #     out_channels,
-        #     2, 2
-        # )
-        self.layers = nn.Sequential(
-            self.upsample_method,
-            Conv3(out_channels, out_channels),
-            Conv3(out_channels, out_channels)
-        )
-
-    def forward(self,
-                x: torch.Tensor,
-                skip_layer: torch.Tensor) -> torch.Tensor:
-        x = torch.cat((x, skip_layer), dim=1)
-        return self.upsample_method(x)
-
-
-class Attention(nn.Module):
-    def __init__(self, dim, heads=8, dim_head=32):
-        super().__init__()
-        self.scale = dim_head ** -0.5
-        self.heads = heads
-        hidden_dim = dim_head * heads
-
-        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
-        self.to_out = nn.Conv2d(hidden_dim, dim, 1)
-
-    def forward(self, x: torch.Tensor):
-        b, c, h, w = x.shape
-        qkv = self.to_qkv(x).chunk(3, dim=1)
-        q, k, v = map(lambda t: rearrange(
-            t, 'b (h c) x y -> b h c (x y)', h=self.heads), qkv)
-
-        q = q * self.scale
-
-        sim = torch.einsum('b h d i, b h d j -> b h i j', q, k)
-        attn = sim.softmax(dim=-1)
-        out = torch.einsum('b h i j, b h d j -> b h i d', attn, v)
-
-        out = rearrange(out, 'b h (x y) d -> b (h d) x y', x=h, y=w)
-        return self.to_out(out)
-
-class TimeStepEmbedding(nn.Module):
+class SinusoidalPositionEmbeddings(nn.Module):
     '''
-    Embeds a single time step faction to a n-dim vector.
-    e.g. At step 300 with a total of 1000 steps, the timestep input
-    will be 300/1000
+    Adapted from DDPM official GitHub repo
     '''
-
-    def __init__(self, dim: int):
+    def __init__(self, dim=32):
         super().__init__()
         self.dim = dim
 
-    def forward(self, time: int):
-        embed = 4 / (self.dim // 2 - 1)
-        embed = torch.exp(
-            torch.arange(self.dim // 2, device=time.device) *
-            -embed
-        )
-        embed = time[:, None] * embed[None, :]
-        embed = torch.cat((embed.sin(), embed.cos()), dim=1)
-        return embed
+    def forward(self, time):
+        device = time.device
+        half_dim = self.dim // 2
+        embeddings = math.log(10000) / (half_dim - 1)
+        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = time[:, None] * embeddings[None, :]
+        embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
+        return embeddings
 
+
+class SimpleBlock(nn.Module):
+    def __init__(self, in_channel, out_channel, time_emb_dim, up=False):
+        super().__init__()
+        self.time_mlp =  nn.Linear(time_emb_dim, out_channel)
+        if up:
+            self.conv1 = nn.Conv2d(2*in_channel, out_channel, 3, padding=1)
+            self.transform = nn.ConvTranspose2d(out_channel, out_channel, 4, 2, 1)
+        else:
+            self.conv1 = nn.Conv2d(in_channel, out_channel, 3, padding=1)
+            self.transform = nn.Conv2d(out_channel, out_channel, 4, 2, 1)
+        self.conv2 = nn.Conv2d(out_channel, out_channel, 3, padding=1)
+        self.gnorm1 = nn.GroupNorm(8, out_channel)
+        self.gnorm2 = nn.GroupNorm(8, out_channel)
+        self.act  = nn.SiLU()
+        
+    def forward(self, x, timestep):
+        # First Conv
+        h = self.gnorm1(self.act(self.conv1(x)))
+        time_emb = self.act(self.time_mlp(timestep))
+        time_emb = einops.rearrange(time_emb, "b c -> b c 1 1")
+        h = h + time_emb
+        h = self.gnorm2(self.act(self.conv2(h)))
+        return self.transform(h)
 
 class Unet(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        n_features: int,
-        attn_head: int,
-        attn_dim: int
-    ):
+    def __init__(self, dim=64, channels=3, dim_mults=(1,2,4,8,16), time_emb_dim=32, device="cuda") -> None:
         super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.n_features = n_features
-        self.attn_head = attn_head
-        self.attn_dim = attn_dim
 
-        # convert image to starting features
-        self.init = Conv3(in_channels, n_features, True)
+        print("Unet initializing...")
+        self.time_mlp = nn.Sequential(
+            SinusoidalPositionEmbeddings(time_emb_dim),
+            nn.Linear(time_emb_dim, time_emb_dim),
+            nn.SiLU()
+        )
 
-        # three downsample layers followed by attention
-        self.down1 = UnetDown(n_features, n_features)
-        self.down2 = UnetDown(n_features, 2 * n_features)
-        self.down3 = UnetDown(2 * n_features, 4 * n_features)
-        self.attndown1 = Attention(n_features, self.attn_head, self.attn_dim)
-        self.attndown2 = Attention(2 * n_features, self.attn_head, self.attn_dim)
-        self.attndown3 = Attention(4 * n_features, self.attn_head, self.attn_dim)
+        self.init_proj = nn.Conv2d(channels, dim * dim_mults[0], kernel_size=3, stride=1, padding=1)
+
+        down_features = [dim*mult for mult in dim_mults]
+        up_features =  down_features[::-1]
+
+        print(up_features)
+
+        self.d1 = SimpleBlock(down_features[0], down_features[1], time_emb_dim, up=False)
+        print(f"Down {0} initialized")
+        self.d2 = SimpleBlock(down_features[1], down_features[2], time_emb_dim, up=False)
+        print(f"Down {1} initialized")
+        self.d3 = SimpleBlock(down_features[2], down_features[3], time_emb_dim, up=False)
+        print(f"Down {2} initialized")
+        self.d4 = SimpleBlock(down_features[3], down_features[4], time_emb_dim, up=False)
+        print(f"Down {3} initialized")
         
 
-        # bottleneck
-        self.bottleneck_in = nn.Sequential(
-            nn.AvgPool2d(4),
-            nn.GELU()
-        )
-        self.bottleneck_out = nn.Sequential(
-            nn.ConvTranspose2d(
-                4 * n_features,
-                4 * n_features,
-                4, 4
-            ),
-            nn.GroupNorm(8, 4 * n_features),
-            nn.GELU()
-        )
-        # time embedding
-        self.time1 = TimeStepEmbedding(4 * n_features)
-        self.time2 = TimeStepEmbedding(2 * n_features)
-        self.time3 = TimeStepEmbedding(1 * n_features)
+        self.u1 = SimpleBlock(up_features[0], up_features[1], time_emb_dim, up=True)
+        print(f"Up {0} initialized")
+        self.u2 = SimpleBlock(up_features[1], up_features[2], time_emb_dim, up=True)
+        print(f"Up {1} initialized")
+        self.u3 = SimpleBlock(up_features[2], up_features[3], time_emb_dim, up=True)
+        print(f"Up {2} initialized")
+        self.u4 = SimpleBlock(up_features[3], up_features[4], time_emb_dim, up=True)
+        print(f"Up {3} initialized")
 
-        # the same goes for upsampling layers
-        self.up1 = UnetUp(2 * 4 * n_features, 2 * n_features)
-        self.up2 = UnetUp(2 * 2 * n_features, n_features)
-        self.up3 = UnetUp(2 * n_features, n_features)
-        self.attnup1 = Attention(2 * n_features,self.attn_head,self.attn_dim)
-        self.attnup2 = Attention(n_features,self.attn_head,self.attn_dim)
-        self.attnup3 = Attention(n_features,self.attn_head,self.attn_dim)
 
-        # final output
-        self.out = nn.Conv2d(2 * n_features, self.out_channels, 3, 1, 1)
+        self.last = nn.Conv2d(up_features[-1], channels, 1).to(device)
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        t: torch.Tensor
-    ) -> torch.Tensor:
-        x = self.init(x)
-        temb1 = self.time1(t).view(-1, self.n_features * 4, 1, 1)
-        temb2 = self.time2(t).view(-1, self.n_features * 2, 1, 1)
-        temb3 = self.time3(t).view(-1, self.n_features * 1, 1, 1)
+        print("Unet initialized")
 
-        d1 = self.down1(x) + temb3
-        d1 = self.attndown1(d1)
+    def forward(self, x, timestep):
+        t = self.time_mlp(timestep)
+        x = self.init_proj(x) 
 
-        d2 = self.down2(d1) + temb2
-        d2 = self.attndown2(d2)
+        r1 = self.d1(x, t)
+        r2 = self.d2(r1, t)
+        r3 = self.d3(r2, t)
+        r4 = self.d4(r3, t)
 
-        d3 = self.down3(d2) + temb1
-        d3 = self.attndown3(d3)
+        x = self.u1(torch.cat((r4, r4), dim=1), t)
+        x = self.u2(torch.cat((x, r3), dim=1), t)
+        x = self.u3(torch.cat((x, r2), dim=1),t)
+        x = self.u4(torch.cat((x, r1), dim=1),t)
 
-        bneck = self.bottleneck_in(d3)
-        bneck = self.bottleneck_out(bneck + temb1)
-
-        u1 = self.up1(bneck, d3) + temb2
-        u1 = self.attnup1(u1)
-
-        u2 = self.up2(u1, d2) + temb3
-        u2 = self.attnup2(u2)
-
-        u3 = self.up3(u2, d1)
-        u3 = self.attnup3(u3)
-
-        out = self.out(torch.cat((u3, x), dim=1))
-
-        return out
+        return self.last(x)

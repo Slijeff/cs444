@@ -25,6 +25,3 @@ class MNISTConfig(DataConfig):
 
 
 mnist_config = MNISTConfig()
-# print(mnist_config.image_mean)
-# print(mnist_config.image_std)
-# print(mnist_config.image_value_range)

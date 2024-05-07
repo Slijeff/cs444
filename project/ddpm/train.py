@@ -1,11 +1,9 @@
 from tqdm import tqdm, trange
 import torch
 from torch.utils.data import DataLoader
-# from ema_pytorch import EMA
 
 
-# from unet import Unet
-from unet_v2 import Unet
+from unet import Unet
 from ddpm import DDPM
 from utils import save_image_from_batch, model_summary
 
@@ -21,11 +19,6 @@ torch.cuda.empty_cache()
 gc.collect()
 def train(config: TrainConfig):
     ddpm = DDPM(
-        # model=Unet(config.data.image_channels,
-        #            config.data.image_channels, 
-        #            n_features=config.unet_features,
-        #            attn_head=config.attention_head, 
-        #            attn_dim=config.attention_dim),
         model = Unet(dim=config.unet_features, channels=config.data.image_channels, dim_mults=(1,2,4,8,16), time_emb_dim=64),
         beta_schedule=config.beta_schedule,
         beta1=config.beta1, beta2=config.beta2, T=config.T,
@@ -54,6 +47,7 @@ def train(config: TrainConfig):
     for epoch in (t := trange(config.num_epoch)):
         epoch_loss = []
         ddpm.train()
+        ddpm.unet.train()
         for idx, (x, _) in enumerate(tqdm(dataloader, leave=False)):
             x = x.to(config.device)
             loss = ddpm(x)
@@ -65,22 +59,23 @@ def train(config: TrainConfig):
             if config.gradient_accumulation:
                 if (idx + 1) % config.gradient_accumulation == 0 \
                         or idx + 1 == len(dataloader):
-                    # torch.nn.utils.clip_grad_norm_(ddpm.parameters(), 5.0)
+                    torch.nn.utils.clip_grad_norm_(ddpm.parameters(), 1.0)
                     optim.step()
                     optim.zero_grad()
             else:
-                # torch.nn.utils.clip_grad_norm_(ddpm.parameters(), 5.0)
+                torch.nn.utils.clip_grad_norm_(ddpm.parameters(), 1.0)
                 optim.step()
                 optim.zero_grad()
 
         if config.generate_every and (epoch % config.generate_every == 0 or
                                       epoch == config.num_epoch - 1):
             ddpm.eval()
+            ddpm.unet.eval()
             if config.seed:
                 torch.manual_seed(config.seed)
             with torch.no_grad():
                 if config.use_ddpm:
-                    samples = ddpm.generate(
+                    samples = ddpm.generate_improve(
                         config.generate_n_images,
                         (config.data.image_channels,
                          config.data.image_size,
